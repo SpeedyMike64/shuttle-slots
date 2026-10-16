@@ -37,6 +37,7 @@
   --open: #173a27; --open-strong: #4cc184; --danger: #f2867f; color-scheme: dark;
 }
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 body {
   background: var(--bg); color: var(--fg); font-family: var(--body); font-size: 15px; line-height: 1.45;
   padding-left: max(16px, env(safe-area-inset-left, 0px));
@@ -127,6 +128,13 @@ aside { display: grid; gap: 14px; }
 .merge { display: flex; gap: 8px; flex-wrap: wrap; width: 100%; }
 .merge input { flex: 1 1 220px; min-width: 0; }
 .notice.ok { border-color: var(--open-strong); }
+.modes { display: inline-flex; border: 1px solid var(--line-strong); border-radius: 8px; overflow: hidden; }
+.modes button { border: 0; background: var(--surface); padding: 6px 11px; font-size: 13.5px; font-weight: 500; }
+.modes button + button { border-left: 1px solid var(--line-strong); }
+.modes button[aria-pressed="true"] { background: var(--fg); color: var(--bg); }
+.modes button.armed { background: var(--danger); color: var(--surface); }
+.c.pick::before { content: ""; position: absolute; inset: 1px; border: 2px solid var(--pc, var(--court)); border-radius: 3px; z-index: 1; }
+.chip .tag { font-size: 11px; color: var(--muted); font-weight: 500; }
 </style>
 </head>
 <body>
@@ -150,12 +158,16 @@ aside { display: grid; gap: 14px; }
       <input type="text" id="newName" placeholder="Your name" maxlength="24" autocomplete="off" aria-label="New player name">
       <button class="btn primary" type="submit">Add player</button>
     </form>
-    <p class="hint">Tap your name to edit your busy times. Tap "counting" to leave someone out of this week's game.</p>
+    <p class="hint">Tap your name to edit your times. Tap "counting" to leave someone out of this week's game.</p>
   </section>
 
   <div class="tools" id="tools" hidden>
     <span class="who"><span class="dot" id="whoDot"></span><span>Editing <span id="whoName"></span></span></span>
-    <span class="group">
+    <span class="modes" role="group" aria-label="How you fill in your week">
+      <button type="button" id="modeBusy" aria-pressed="true">Mark busy times</button>
+      <button type="button" id="modeFree" aria-pressed="false">Mark times I can play</button>
+    </span>
+    <span class="group" id="workGroup">
       <label for="workFrom">Work hours</label>
       <select id="workFrom"></select>
       <span>to</span>
@@ -191,6 +203,8 @@ aside { display: grid; gap: 14px; }
         <div class="legend">
           <div><span class="sw" style="background:var(--open)"></span>Everyone counted is free</div>
           <div><span class="sw" style="background:linear-gradient(90deg,#e4572e 0 50%,#2e86de 50% 100%)"></span>Busy (one stripe per person)</div>
+          <div><span class="sw" style="background:#2e86de66"></span>Faded: not one of the times that player picked</div>
+          <div><span class="sw" style="box-shadow:inset 0 0 0 2px var(--court)"></span>Outline: times you picked to play</div>
         </div>
       </div>
     </aside>
@@ -262,21 +276,25 @@ function inRect(i) {
   const d1 = Math.floor(drag.start / ROWS), r1 = drag.start % ROWS, d2 = Math.floor(drag.end / ROWS), r2 = drag.end % ROWS;
   return d >= Math.min(d1, d2) && d <= Math.max(d1, d2) && r >= Math.min(r1, r2) && r <= Math.max(r1, r2);
 }
-function busyAt(p, i) { return (drag && p.id === activeId && inRect(i)) ? drag.add : p.busy[i] === 1; }
+function markAt(p, i) { return (drag && p.id === activeId && inRect(i)) ? drag.add : p.busy[i] === 1; }
+// players in "can play" mode mark the times they're free; everyone else marks busy times
+function busyAt(p, i) { return p.mode === "free" ? !markAt(p, i) : markAt(p, i); }
 const counted = () => people.filter(p => !excluded.has(p.id));
 
 function paint() {
   const cs = counted(), me = byId(activeId);
   for (let i = 0; i < N; i++) {
     const cols = [];
-    for (const p of cs) if (busyAt(p, i)) cols.push(colorOf(p));
+    for (const p of cs) if (busyAt(p, i)) cols.push(p.mode === "free" ? colorOf(p) + "66" : colorOf(p));
     const c = cells[i];
     if (!cols.length) c.style.background = "";
     else if (cols.length === 1) c.style.background = cols[0];
     else c.style.background = "linear-gradient(90deg," + cols.map((k, j) => `${k} ${j * 100 / cols.length}% ${(j + 1) * 100 / cols.length}%`).join(",") + ")";
     c.classList.toggle("free", !cols.length && cs.length > 0);
-    c.classList.toggle("mine", !!me && !excluded.has(me.id) && busyAt(me, i) && cols.length > 1);
+    c.classList.toggle("mine", !!me && me.mode !== "free" && !excluded.has(me.id) && busyAt(me, i) && cols.length > 1);
+    c.classList.toggle("pick", !!me && me.mode === "free" && markAt(me, i));
   }
+  if (me) grid.style.setProperty("--pc", colorOf(me));
 }
 
 function describe(i) {
@@ -329,7 +347,7 @@ function renderSlots() {
   for (let d = 0; d < 7; d++) {
     let run = -1;
     for (let r = 0; r <= ROWS; r++) {
-      const free = r < ROWS && cs.every(p => p.busy[d * ROWS + r] !== 1);
+      const free = r < ROWS && cs.every(p => !busyAt(p, d * ROWS + r));
       if (free && run < 0) run = r;
       if (!free && run >= 0) { if (r - run >= min) found.push({ d, a: run, b: r }); run = -1; }
     }
@@ -360,6 +378,7 @@ function renderChips() {
     pick.className = "pick"; pick.type = "button"; pick.setAttribute("aria-pressed", p.id === activeId);
     pick.innerHTML = `<span class="dot" style="background:${colorOf(p)}"></span>`;
     pick.append(p.name);
+    if (p.mode === "free") { const t = document.createElement("span"); t.className = "tag"; t.textContent = "picked times"; pick.append(t); }
     pick.addEventListener("click", () => { activeId = activeId === p.id ? null : p.id; store.set(LS.active, activeId); renderAll(); });
     const cnt = document.createElement("button");
     cnt.className = "count"; cnt.type = "button"; cnt.textContent = "counting";
@@ -369,7 +388,12 @@ function renderChips() {
   }
   const me = byId(activeId);
   $("tools").hidden = !me;
-  if (me) { $("whoDot").style.background = colorOf(me); $("whoName").textContent = me.name; }
+  if (me) {
+    $("whoDot").style.background = colorOf(me); $("whoName").textContent = me.name;
+    $("modeBusy").setAttribute("aria-pressed", me.mode !== "free");
+    $("modeFree").setAttribute("aria-pressed", me.mode === "free");
+    $("workGroup").hidden = me.mode === "free";
+  }
   grid.classList.toggle("view", !me);
 }
 function renderAll() { renderChips(); paint(); renderSlots(); }
@@ -381,7 +405,7 @@ $("addForm").addEventListener("submit", e => {
   const used = new Set(people.map(p => p.color % COLORS.length));
   let color = COLORS.findIndex((_, k) => !used.has(k)); if (color < 0) color = people.length % COLORS.length;
   const id = "p" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-  const p = { id, name, color, created: Date.now(), busy: new Uint8Array(N) };
+  const p = { id, name, color, created: Date.now(), mode: "busy", busy: new Uint8Array(N) };
   people.push(p); activeId = id; store.set(LS.active, id);
   $("newName").value = "";
   renderAll();
@@ -405,6 +429,26 @@ $("clearBtn").addEventListener("click", () => {
   const me = byId(activeId); if (!me) return;
   me.busy = new Uint8Array(N); paint(); renderSlots(); save(me);
 });
+let modeTimer = null;
+function setMode(mode) {
+  const me = byId(activeId); if (!me || (me.mode || "busy") === mode) return;
+  const btn = mode === "free" ? $("modeFree") : $("modeBusy");
+  // switching flips what a mark means, so existing marks are cleared after a second tap
+  if (me.busy.some(v => v) && !btn.classList.contains("armed")) {
+    btn.classList.add("armed"); btn.dataset.label = btn.textContent; btn.textContent = "Tap again: this clears your marks";
+    clearTimeout(modeTimer); modeTimer = setTimeout(() => disarmMode(btn), 4000); return;
+  }
+  disarmMode(btn);
+  me.mode = mode; me.busy = new Uint8Array(N);
+  $("status").textContent = mode === "free"
+    ? "Drag over the times you'd like to play. Every other time counts as busy for you."
+    : "Drag on the grid to mark busy time. Start on a busy square to erase instead.";
+  renderAll(); save(me);
+}
+function disarmMode(btn) { clearTimeout(modeTimer); if (btn.dataset.label) { btn.textContent = btn.dataset.label; delete btn.dataset.label; } btn.classList.remove("armed"); }
+$("modeBusy").addEventListener("click", () => setMode("busy"));
+$("modeFree").addEventListener("click", () => setMode("free"));
+
 let armTimer = null;
 $("removeBtn").addEventListener("click", async () => {
   const b = $("removeBtn"), me = byId(activeId); if (!me) return;
@@ -439,7 +483,9 @@ async function save(p) {
     do {
       s.dirty = false;
       const cur = byId(p.id); if (!cur) break;
-      await setDoc(doc(col, p.id), { name: cur.name, color: cur.color, created: cur.created, busy: encode(cur.busy) });
+      const body = { name: cur.name, color: cur.color, created: cur.created, busy: encode(cur.busy) };
+      if (cur.mode === "free") body.mode = "free";
+      await setDoc(doc(col, p.id), body);
     } while (s.dirty);
     setSync("live", "Saved");
   } catch (err) { saveFailed(err); }
@@ -459,12 +505,12 @@ try {
   onSnapshot(col, snap => {
     const incoming = snap.docs.map(d => {
       const v = d.data();
-      return { id: d.id, name: String(v.name || "Player").slice(0, 24), color: Number.isInteger(v.color) ? v.color : 0, created: +v.created || 0, busy: decode(v.busy) };
+      return { id: d.id, name: String(v.name || "Player").slice(0, 24), color: Number.isInteger(v.color) ? v.color : 0, created: +v.created || 0, mode: v.mode === "free" ? "free" : "busy", busy: decode(v.busy) };
     }).sort((a, b) => a.created - b.created);
     // keep this device's edits that are still saving
     for (const p of incoming) {
       const s = saving.get(p.id), local = byId(p.id);
-      if (local && s && (s.inFlight || s.dirty)) p.busy = local.busy;
+      if (local && s && (s.inFlight || s.dirty)) { p.busy = local.busy; p.mode = local.mode; }
     }
     people = incoming;
     if (activeId && !byId(activeId)) activeId = null;

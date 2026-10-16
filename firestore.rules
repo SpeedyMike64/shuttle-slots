@@ -1,12 +1,13 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // One document per player: name, color, created time and a 238-character busy grid
+    // One document per player: name, color, created time, a 238-character grid of marks,
+    // and an optional mode ('free' means the marks are times they can play)
     match /people/{id} {
       allow read: if true;
       allow delete: if id.size() <= 20;
       allow create, update: if id.size() <= 20
-        && request.resource.data.keys().hasOnly(['name', 'color', 'created', 'busy'])
+        && request.resource.data.keys().hasOnly(['name', 'color', 'created', 'busy', 'mode'])
         && request.resource.data.name is string
         && request.resource.data.name.size() > 0
         && request.resource.data.name.size() <= 24
@@ -16,7 +17,8 @@ service cloud.firestore {
         && request.resource.data.created is int
         && request.resource.data.busy is string
         && request.resource.data.busy.size() == 238
-        && request.resource.data.busy.matches('^[01]+$');
+        && request.resource.data.busy.matches('^[01]+$')
+        && (!('mode' in request.resource.data) || request.resource.data.mode in ['busy', 'free']);
     }
     match /{document=**} {
       allow read, write: if false;

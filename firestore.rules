@@ -1,0 +1,25 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // One document per player: name, color, created time and a 238-character busy grid
+    match /people/{id} {
+      allow read: if true;
+      allow delete: if id.size() <= 20;
+      allow create, update: if id.size() <= 20
+        && request.resource.data.keys().hasOnly(['name', 'color', 'created', 'busy'])
+        && request.resource.data.name is string
+        && request.resource.data.name.size() > 0
+        && request.resource.data.name.size() <= 24
+        && request.resource.data.color is int
+        && request.resource.data.color >= 0
+        && request.resource.data.color < 12
+        && request.resource.data.created is int
+        && request.resource.data.busy is string
+        && request.resource.data.busy.size() == 238
+        && request.resource.data.busy.matches('^[01]+$');
+    }
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

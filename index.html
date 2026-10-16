@@ -137,17 +137,10 @@ aside { display: grid; gap: 14px; }
   </header>
 
   <div class="share">
-    <span class="grow"><b>How it saves:</b> your times are kept in this page's link. After you make changes, tap <b>Share with group</b> and post the link in your group chat. Always open the newest link from the chat.</span>
-    <button class="btn primary" id="shareBtn" type="button">Share with group</button>
-    <details class="merge" id="mergeBox">
-      <summary class="hint" style="cursor:pointer">Two people posted links at the same time? Combine them here</summary>
-      <form class="merge" id="mergeForm" style="margin-top:8px">
-        <input type="text" id="mergeInput" placeholder="Paste the other Shuttle Slots link" autocomplete="off" aria-label="Link to combine">
-        <button class="btn" type="submit">Combine</button>
-      </form>
-    </details>
+    <span class="sync" id="sync"><i></i><span>Connecting…</span></span>
+    <span class="grow">Changes save by themselves and show up for everyone with this link.</span>
+    <button class="btn" id="copyBtn" type="button">Copy link</button>
   </div>
-
   <p class="notice" id="notice" hidden></p>
 
   <section class="players">
@@ -204,11 +197,23 @@ aside { display: grid; gap: 14px; }
   </div>
 </div>
 
-<script>
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import { getFirestore, collection, doc, setDoc, deleteDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyCbJKufltigW4_VpaS0bye82m45IiFi9iU",
+  authDomain: "shuttle-slots.firebaseapp.com",
+  projectId: "shuttle-slots",
+  storageBucket: "shuttle-slots.firebasestorage.app",
+  messagingSenderId: "701270622323",
+  appId: "1:701270622323:web:61f85fc27d90e45fe3ea06"
+};
+
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const START = 7, ROWS = 34, N = 7 * ROWS; // 7:00 to 24:00 in half hours
 const COLORS = ["#e4572e", "#2e86de", "#f2a541", "#9b59b6", "#17a2b8", "#e84393", "#6c5ce7", "#a1887f", "#ff8a65", "#5c7cfa", "#d4a017", "#c2185b"];
-const LS = { state: "ss.state", active: "ss.active", out: "ss.out" };
+const LS = { active: "ss.active", out: "ss.out" };
 
 const $ = id => document.getElementById(id);
 const store = {
@@ -216,68 +221,24 @@ const store = {
   set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} }
 };
 
-// people includes removed players as tombstones ({removed: true}) so old links can't bring them back
-let people = [];            // {id, name, color (index), updated (sec), removed, busy: Uint8Array}
+let people = [];            // {id, name, color (index), created, busy: Uint8Array}
 let activeId = store.get(LS.active, null);
 let excluded = new Set(store.get(LS.out, []));
 let drag = null;            // {start, end, add}
+let col = null;
+const saving = new Map();   // id -> {inFlight, dirty}
 
-const now = () => Math.floor(Date.now() / 1000);
-const live = () => people.filter(p => !p.removed);
-const byId = id => live().find(p => p.id === id);
+const byId = id => people.find(p => p.id === id);
 const colorOf = p => COLORS[p.color % COLORS.length];
 const esc = s => String(s).replace(/[&<>"]/g, ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[ch]));
+const decode = s => { const a = new Uint8Array(N); if (typeof s === "string") for (let i = 0; i < N && i < s.length; i++) a[i] = s[i] === "1" ? 1 : 0; return a; };
+const encode = a => Array.from(a, v => v ? "1" : "0").join("");
 
 function fmtTime(row) {
   const mins = START * 60 + row * 30, h = Math.floor(mins / 60) % 24, m = mins % 60;
   const ap = h < 12 ? "AM" : "PM", h12 = h % 12 === 0 ? 12 : h % 12;
   return h12 + (m ? ":" + String(m).padStart(2, "0") : "") + " " + ap;
 }
-
-/* ---------- link encoding ----------
-   #v1.<person>.<person>…  each person = id~name~color~updated~bits (fields URI-encoded, bits base64url) */
-function bitsToB64(a) {
-  const bytes = new Uint8Array(Math.ceil(N / 8));
-  for (let i = 0; i < N; i++) if (a[i]) bytes[i >> 3] |= 1 << (i & 7);
-  let s = ""; bytes.forEach(b => s += String.fromCharCode(b));
-  return btoa(s).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-}
-function b64ToBits(s) {
-  const a = new Uint8Array(N);
-  try {
-    const bin = atob(s.replace(/-/g, "+").replace(/_/g, "/"));
-    for (let i = 0; i < N; i++) if ((bin.charCodeAt(i >> 3) || 0) & (1 << (i & 7))) a[i] = 1;
-  } catch {}
-  return a;
-}
-function encodeState(list) {
-  return "v1." + list.map(p => [p.id, encodeURIComponent(p.name).replace(/[.~]/g, c => "%" + c.charCodeAt(0).toString(16).toUpperCase()), p.removed ? "x" : p.color, p.updated.toString(36), p.removed ? "" : bitsToB64(p.busy)].join("~")).join(".");
-}
-function decodeState(hash) {
-  const h = hash.replace(/^#/, "");
-  if (!h.startsWith("v1.")) return null;
-  const out = [];
-  for (const part of h.slice(3).split(".")) {
-    const f = part.split("~");
-    if (f.length !== 5 || !/^[a-z0-9]{1,12}$/.test(f[0])) continue;
-    let name; try { name = decodeURIComponent(f[1]).slice(0, 24); } catch { continue; }
-    const removed = f[2] === "x";
-    out.push({ id: f[0], name, color: removed ? 0 : (parseInt(f[2], 10) || 0), updated: parseInt(f[3], 36) || 0, removed, busy: removed ? new Uint8Array(N) : b64ToBits(f[4]) });
-  }
-  return out;
-}
-// newest version of each player wins
-function merge(a, b) {
-  const m = new Map(a.map(p => [p.id, p]));
-  for (const p of b) { const q = m.get(p.id); if (!q || p.updated > q.updated) m.set(p.id, p); }
-  return [...m.values()];
-}
-function shareUrl() { return location.href.split("#")[0] + "#" + encodeState(people); }
-function persist() {
-  store.set(LS.state, encodeState(people));
-  try { history.replaceState(null, "", "#" + encodeState(people)); } catch {}
-}
-function touch(p) { p.updated = Math.max(now(), p.updated + 1); persist(); }
 
 /* ---------- grid ---------- */
 const grid = $("grid");
@@ -302,7 +263,7 @@ function inRect(i) {
   return d >= Math.min(d1, d2) && d <= Math.max(d1, d2) && r >= Math.min(r1, r2) && r <= Math.max(r1, r2);
 }
 function busyAt(p, i) { return (drag && p.id === activeId && inRect(i)) ? drag.add : p.busy[i] === 1; }
-const counted = () => live().filter(p => !excluded.has(p.id));
+const counted = () => people.filter(p => !excluded.has(p.id));
 
 function paint() {
   const cs = counted(), me = byId(activeId);
@@ -321,7 +282,7 @@ function paint() {
 function describe(i) {
   const d = Math.floor(i / ROWS), r = i % ROWS;
   const when = `<b>${DAYS[d]} ${fmtTime(r)}–${fmtTime(r + 1)}</b>`;
-  if (!live().length) return when;
+  if (!people.length) return when;
   const busy = counted().filter(p => busyAt(p, i)).map(p => esc(p.name));
   const free = counted().filter(p => !busyAt(p, i)).map(p => esc(p.name));
   return `${when} · Busy: ${busy.length ? busy.join(", ") : "nobody"} · Free: ${free.length ? free.join(", ") : "nobody"}`;
@@ -351,9 +312,10 @@ grid.addEventListener("pointermove", e => {
 function endDrag() {
   if (!drag) return;
   const me = byId(activeId);
-  if (me) { for (let i = 0; i < N; i++) if (inRect(i)) me.busy[i] = drag.add ? 1 : 0; touch(me); }
+  if (me) for (let i = 0; i < N; i++) if (inRect(i)) me.busy[i] = drag.add ? 1 : 0;
   drag = null;
   paint(); renderSlots();
+  if (me) save(me);
 }
 grid.addEventListener("pointerup", endDrag);
 grid.addEventListener("pointercancel", endDrag);
@@ -362,7 +324,7 @@ grid.addEventListener("pointercancel", endDrag);
 function renderSlots() {
   const ul = $("slots"); ul.innerHTML = "";
   const cs = counted();
-  if (!cs.length) { ul.innerHTML = `<li><p class="empty">${live().length ? "Nobody is counted. Tap \"counting\" on a player to include them." : "Add players to see when everyone is free."}</p></li>`; return; }
+  if (!cs.length) { ul.innerHTML = `<li><p class="empty">${people.length ? "Nobody is counted. Tap \"counting\" on a player to include them." : "Add players to see when everyone is free."}</p></li>`; return; }
   const min = +$("minLen").value, found = [];
   for (let d = 0; d < 7; d++) {
     let run = -1;
@@ -390,8 +352,8 @@ $("showOpen").addEventListener("change", e => grid.classList.toggle("showopen", 
 /* ---------- players ---------- */
 function renderChips() {
   const box = $("chips"); box.innerHTML = "";
-  if (!live().length) box.innerHTML = `<p class="empty">No players yet. Add your name below, then drag on the grid to block out your busy times.</p>`;
-  for (const p of live()) {
+  if (!people.length) box.innerHTML = `<p class="empty">No players yet. Add your name below, then drag on the grid to block out your busy times.</p>`;
+  for (const p of people) {
     const chip = document.createElement("span");
     chip.className = "chip" + (p.id === activeId ? " active" : "") + (excluded.has(p.id) ? " out" : "");
     const pick = document.createElement("button");
@@ -414,15 +376,16 @@ function renderAll() { renderChips(); paint(); renderSlots(); }
 
 $("addForm").addEventListener("submit", e => {
   e.preventDefault();
-  const name = $("newName").value.trim();
-  if (!name) return;
-  const used = new Set(live().map(p => p.color % COLORS.length));
+  const name = $("newName").value.trim().slice(0, 24);
+  if (!name || !col) return;
+  const used = new Set(people.map(p => p.color % COLORS.length));
   let color = COLORS.findIndex((_, k) => !used.has(k)); if (color < 0) color = people.length % COLORS.length;
-  const id = Math.random().toString(36).slice(2, 8);
-  const p = { id, name, color, updated: now(), removed: false, busy: new Uint8Array(N) };
+  const id = "p" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+  const p = { id, name, color, created: Date.now(), busy: new Uint8Array(N) };
   people.push(p); activeId = id; store.set(LS.active, id);
   $("newName").value = "";
-  persist(); renderAll();
+  renderAll();
+  save(p);
 });
 
 (function () {
@@ -435,63 +398,87 @@ $("workBtn").addEventListener("click", () => {
   const a = +$("workFrom").value, b = +$("workTo").value;
   if (b <= a) { $("status").textContent = "Pick an end time later than the start time."; return; }
   for (let d = 0; d < 5; d++) for (let r = a; r < b; r++) me.busy[d * ROWS + r] = 1;
-  touch(me); paint(); renderSlots();
+  paint(); renderSlots(); save(me);
   $("status").textContent = `Blocked Mon–Fri ${fmtTime(a)}–${fmtTime(b)} for ${me.name}. Drag to adjust any day.`;
 });
 $("clearBtn").addEventListener("click", () => {
   const me = byId(activeId); if (!me) return;
-  me.busy = new Uint8Array(N); touch(me); paint(); renderSlots();
+  me.busy = new Uint8Array(N); paint(); renderSlots(); save(me);
 });
 let armTimer = null;
-$("removeBtn").addEventListener("click", () => {
+$("removeBtn").addEventListener("click", async () => {
   const b = $("removeBtn"), me = byId(activeId); if (!me) return;
   if (!b.classList.contains("armed")) {
     b.classList.add("armed"); b.textContent = `Yes, remove ${me.name}`;
     clearTimeout(armTimer); armTimer = setTimeout(disarm, 4000); return;
   }
   disarm();
-  me.removed = true; me.busy = new Uint8Array(N); touch(me);
-  activeId = null; store.set(LS.active, null);
+  people = people.filter(p => p.id !== me.id); activeId = null; store.set(LS.active, null);
   renderAll();
+  try { await deleteDoc(doc(col, me.id)); } catch (err) { saveFailed(err); }
 });
 function disarm() { const b = $("removeBtn"); b.classList.remove("armed"); b.textContent = "Remove player"; }
 
-/* ---------- sharing ---------- */
-function showNotice(t, ok) { const n = $("notice"); n.textContent = t; n.className = "notice" + (ok ? " ok" : ""); n.hidden = false; }
-$("shareBtn").addEventListener("click", async () => {
-  if (!live().length) { showNotice("Add at least one player before sharing."); return; }
-  const url = shareUrl();
-  const text = "Badminton: mark when you're busy, then tap Share with group and post the new link here.";
-  if (navigator.share) {
-    try { await navigator.share({ title: "Shuttle Slots", text, url }); return; }
-    catch (err) { if (err && err.name === "AbortError") return; }
-  }
+$("copyBtn").addEventListener("click", async () => {
+  const url = location.href.split("#")[0];
   try { await navigator.clipboard.writeText(url); showNotice("Link copied. Paste it in your group chat.", true); }
-  catch { showNotice("Copy this link and paste it in your group chat: " + url, true); }
-});
-$("mergeForm").addEventListener("submit", e => {
-  e.preventDefault();
-  const v = $("mergeInput").value.trim(), i = v.indexOf("#");
-  const other = i >= 0 ? decodeState(v.slice(i)) : null;
-  if (!other) { showNotice("That doesn't look like a Shuttle Slots link. Copy the whole link from the chat and try again."); return; }
-  people = merge(people, other); persist(); renderAll();
-  $("mergeInput").value = ""; $("mergeBox").open = false;
-  showNotice(`Combined. ${live().length} players now. Tap Share with group to post the combined link.`, true);
+  catch { showNotice("Share this link in your group chat: " + url, true); }
 });
 
+/* ---------- saving ---------- */
+function showNotice(t, ok) { const n = $("notice"); n.textContent = t; n.className = "notice" + (ok ? " ok" : ""); n.hidden = false; }
+function setSync(cls, text) { const s = $("sync"); s.className = "sync " + cls; s.querySelector("span").textContent = text; }
+
+async function save(p) {
+  const s = saving.get(p.id) || { inFlight: false, dirty: false };
+  saving.set(p.id, s);
+  if (s.inFlight) { s.dirty = true; return; }
+  s.inFlight = true;
+  setSync("", "Saving…");
+  try {
+    do {
+      s.dirty = false;
+      const cur = byId(p.id); if (!cur) break;
+      await setDoc(doc(col, p.id), { name: cur.name, color: cur.color, created: cur.created, busy: encode(cur.busy) });
+    } while (s.dirty);
+    setSync("live", "Saved");
+  } catch (err) { saveFailed(err); }
+  finally { s.inFlight = false; }
+}
+function saveFailed(err) {
+  console.error(err);
+  setSync("warn", "Not saved");
+  showNotice("That change didn't save. Check your internet connection, then drag again.");
+}
+
 /* ---------- start ---------- */
-(function start() {
-  const saved = decodeState(store.get(LS.state, "") || "") || [];
-  const fromLink = decodeState(location.hash);
-  people = fromLink ? merge(saved, fromLink) : saved;
-  if (fromLink && live().length) showNotice(`Loaded the latest schedule: ${live().map(p => p.name).join(", ")}. Tap your name to add or change your times.`, true);
-  if (activeId && !byId(activeId)) activeId = null;
-  persist(); renderAll();
-})();
-window.addEventListener("hashchange", () => {
-  const fromLink = decodeState(location.hash);
-  if (fromLink) { people = merge(people, fromLink); store.set(LS.state, encodeState(people)); renderAll(); }
-});
+renderAll();
+try {
+  const app = initializeApp(firebaseConfig);
+  col = collection(getFirestore(app), "people");
+  onSnapshot(col, snap => {
+    const incoming = snap.docs.map(d => {
+      const v = d.data();
+      return { id: d.id, name: String(v.name || "Player").slice(0, 24), color: Number.isInteger(v.color) ? v.color : 0, created: +v.created || 0, busy: decode(v.busy) };
+    }).sort((a, b) => a.created - b.created);
+    // keep this device's edits that are still saving
+    for (const p of incoming) {
+      const s = saving.get(p.id), local = byId(p.id);
+      if (local && s && (s.inFlight || s.dirty)) p.busy = local.busy;
+    }
+    people = incoming;
+    if (activeId && !byId(activeId)) activeId = null;
+    if (!snap.metadata.hasPendingWrites) setSync("live", "Live: everyone sees the same grid");
+    if (!drag) renderAll();
+  }, err => {
+    console.error(err);
+    setSync("warn", "Can't reach the schedule");
+    showNotice("The schedule couldn't load. Check your internet connection and reload the page.");
+  });
+} catch (err) {
+  console.error(err);
+  setSync("warn", "Can't reach the schedule");
+}
 </script>
 </body>
 </html>

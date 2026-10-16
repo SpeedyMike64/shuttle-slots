@@ -79,13 +79,17 @@ button { cursor: pointer; }
 :focus-visible { outline: 2px solid var(--court); outline-offset: 2px; }
 .btn { border: 1px solid var(--line-strong); background: var(--surface); border-radius: 8px; padding: 6px 12px; font-size: 14px; font-weight: 500; }
 .btn:hover { border-color: var(--court); }
-.btn.primary { background: var(--court); color: var(--court-ink); border-color: var(--court); }
+.btn.primary { background: var(--pop); color: var(--pop-ink); border-color: var(--pop); font-weight: 700; }
+.btn.primary:hover { filter: brightness(1.05); border-color: var(--pop); }
 .btn.danger { color: var(--danger); }
 .btn.danger.armed { background: var(--danger); color: var(--surface); border-color: var(--danger); }
 input[type=text], select { border: 1px solid var(--line-strong); background: var(--surface); border-radius: 8px; padding: 6px 10px; font-size: 14px; }
 
 /* Players */
-.players { display: grid; gap: 10px; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 18px; padding: 16px; display: grid; gap: 12px; min-width: 0; }
+.step { display: flex; align-items: center; gap: 10px; font-family: var(--display); font-weight: 700; font-size: 1.55rem; line-height: 1; text-transform: uppercase; letter-spacing: .02em; margin: 0; }
+.step b { flex: none; width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; background: var(--pop); color: var(--pop-ink); font-size: 18px; box-shadow: 0 0 0 3px color-mix(in srgb, var(--pop) 30%, transparent); }
+.step small { font-family: var(--body); font-weight: 500; font-size: 13px; letter-spacing: 0; text-transform: none; color: var(--muted); margin-left: auto; }
 .chips { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .chip { display: inline-flex; align-items: center; gap: 8px; border: 1.5px solid var(--line); background: var(--surface); border-radius: 999px; padding: 4px 6px 4px 6px; font-weight: 500; font-size: 14px; }
 .chip.active { border-color: var(--fg); box-shadow: 0 0 0 1px var(--fg); }
@@ -95,10 +99,11 @@ input[type=text], select { border: 1px solid var(--line-strong); background: var
 .chip .count { border: 0; background: none; font-size: 12px; color: var(--muted); padding: 2px 8px; border-left: 1px solid var(--line); }
 .chip.out .count { text-decoration: line-through; }
 .add { display: flex; gap: 8px; flex-wrap: wrap; }
-.add input { flex: 1 1 160px; max-width: 240px; }
+.add input { flex: 1 1 180px; max-width: 320px; font-size: 16px; padding: 10px 14px; border-radius: 12px; }
+.add .btn { padding: 10px 18px; border-radius: 12px; font-size: 15px; }
 .hint { font-size: 13px; color: var(--muted); margin: 0; }
 
-.tools { display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: center; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
+.tools { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; background: var(--bg); border-radius: 12px; padding: 8px 10px; }
 .tools .who { font-weight: 600; display: inline-flex; gap: 8px; align-items: center; }
 .tools .group { display: inline-flex; gap: 6px; align-items: center; flex-wrap: wrap; font-size: 14px; }
 .tools .grow { flex: 1; }
@@ -107,7 +112,8 @@ input[type=text], select { border: 1px solid var(--line-strong); background: var
 .main { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 18px; align-items: start; }
 @media (max-width: 860px) { .main { grid-template-columns: minmax(0, 1fr); } }
 
-.board { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 10px 10px 8px; min-width: 0; }
+.board { padding: 16px 10px 10px; }
+.board .step, .board .tools { margin-inline: 6px; }
 .grid { display: grid; grid-template-columns: 52px repeat(7, minmax(0, 1fr)); user-select: none; -webkit-user-select: none; touch-action: none; }
 .grid.view { touch-action: auto; }
 .dh { font-family: var(--display); font-weight: 600; letter-spacing: .06em; text-transform: uppercase; text-align: center; font-size: 15px; padding: 2px 0 6px; }
@@ -127,7 +133,7 @@ input[type=text], select { border: 1px solid var(--line-strong); background: var
 
 /* Sidebar */
 aside { display: grid; gap: 14px; }
-.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 14px; display: grid; gap: 12px; }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 18px; padding: 16px; display: grid; gap: 12px; }
 .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: 14px; }
 h3 { font-size: 12px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); margin: 4px 0 0; }
 .slots { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
@@ -142,8 +148,10 @@ h3 { font-size: 12px; font-weight: 600; letter-spacing: .06em; text-transform: u
 .sw { width: 22px; height: 14px; border: 1px solid var(--line-strong); border-radius: 3px; flex: none; }
 .notice { font-size: 13px; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line-strong); background: var(--surface); margin: 0; }
 .notice.ok { border-color: var(--open-strong); }
-.share { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
-.share .grow { flex: 1 1 200px; font-size: 13.5px; color: var(--muted); min-width: 0; }
+.share { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; padding: 0 4px; }
+.share .btn { border-radius: 999px; font-size: 13px; padding: 5px 14px; }
+.prompt { margin: 0; font-size: 14px; color: var(--muted); }
+.prompt b { color: var(--fg); }
 </style>
 </head>
 <body>
@@ -167,36 +175,36 @@ h3 { font-size: 12px; font-weight: 600; letter-spacing: .06em; text-transform: u
 
   <div class="share">
     <span class="sync" id="sync"><i></i><span>Connecting…</span></span>
-    <span class="grow">Changes save by themselves and show up for everyone with this link.</span>
-    <button class="btn" id="copyBtn" type="button">Copy link</button>
+    <button class="btn" id="copyBtn" type="button">Copy link for the group</button>
   </div>
   <p class="notice" id="notice" hidden></p>
 
-  <section class="players">
-    <h2>Players</h2>
-    <div class="chips" id="chips"></div>
+  <section class="card players">
+    <h2 class="step"><b>1</b>Add your name</h2>
     <form class="add" id="addForm">
-      <input type="text" id="newName" placeholder="Your name" maxlength="24" autocomplete="off" aria-label="New player name">
-      <button class="btn primary" type="submit">Add player</button>
+      <input type="text" id="newName" placeholder="Type your name" maxlength="24" autocomplete="off" aria-label="Your name">
+      <button class="btn primary" type="submit">I'm in!</button>
     </form>
-    <p class="hint">Tap your name to edit. Tap "counting" to leave someone out this week.</p>
+    <div class="chips" id="chips"></div>
+    <p class="hint">Already on the list? Just tap your name. Tap "counting" to leave someone out this week.</p>
   </section>
 
-  <div class="tools" id="tools" hidden>
-    <span class="who"><span class="dot" id="whoDot"></span><span>Editing <span id="whoName"></span></span></span>
-    <span class="grow"></span>
-    <button class="btn" id="clearBtn" type="button">Clear my week</button>
-    <button class="btn danger" id="removeBtn" type="button">Remove player</button>
-  </div>
-
   <div class="main">
-    <div class="board">
+    <div class="card board">
+      <h2 class="step"><b>2</b>Drag your free times</h2>
+      <p class="prompt" id="prompt">Tap your name in step 1 first, then drag across the times you can play.</p>
+      <div class="tools" id="tools" hidden>
+        <span class="who"><span class="dot" id="whoDot"></span><span>Editing <span id="whoName"></span></span></span>
+        <span class="grow"></span>
+        <button class="btn" id="clearBtn" type="button">Clear my week</button>
+        <button class="btn danger" id="removeBtn" type="button">Remove me</button>
+      </div>
       <div class="grid" id="grid" aria-label="Weekly free-time grid"></div>
-      <div class="status" id="status">Tap your name, then drag over the times you're free. Start on a time you already marked to erase instead.</div>
+      <div class="status" id="status">Tip: start dragging on a time you already marked to erase it.</div>
     </div>
     <aside>
       <div class="panel">
-        <h2>Court times</h2>
+        <h2 class="step"><b>3</b>Book the green</h2>
         <div class="row">
           <label for="minLen">At least</label>
           <select id="minLen">
@@ -405,7 +413,7 @@ $("minLen").addEventListener("change", renderSlots);
 /* ---------- players ---------- */
 function renderChips() {
   const box = $("chips"); box.innerHTML = "";
-  if (!people.length) box.innerHTML = `<p class="empty">No players yet. Add your name below, then drag over the times you're free to play.</p>`;
+  if (!people.length) box.innerHTML = `<p class="empty">Nobody's in yet. Be the first!</p>`;
   for (const p of people) {
     const chip = document.createElement("span");
     chip.className = "chip" + (p.id === activeId ? " active" : "") + (excluded.has(p.id) ? " out" : "");
@@ -422,6 +430,7 @@ function renderChips() {
   }
   const me = byId(activeId);
   $("tools").hidden = !me;
+  $("prompt").hidden = !!me;
   if (me) { $("whoDot").style.background = colorOf(me); $("whoName").textContent = me.name; }
   grid.classList.toggle("view", !me);
 }
@@ -457,7 +466,7 @@ $("removeBtn").addEventListener("click", async () => {
   renderAll();
   try { await deleteDoc(doc(col, me.id)); } catch (err) { saveFailed(err); }
 });
-function disarm() { const b = $("removeBtn"); b.classList.remove("armed"); b.textContent = "Remove player"; }
+function disarm() { const b = $("removeBtn"); b.classList.remove("armed"); b.textContent = "Remove me"; }
 
 $("copyBtn").addEventListener("click", async () => {
   const url = location.href.split("#")[0];

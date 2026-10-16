@@ -1,0 +1,497 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Shuttle Slots</title>
+<meta name="description" content="Find when your whole badminton group is free.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Figtree:wght@400;500;600&display=swap">
+<style>
+/* Layout: court-line header, player chips, then a week grid (left) beside an "open court times" list (right); stacks on phones. */
+:root {
+  --bg: #f3f6f2;
+  --surface: #ffffff;
+  --fg: #17241c;
+  --muted: #5d6b62;
+  --line: #d5ddd6;
+  --line-strong: #aab8ad;
+  --court: #1d6b47;
+  --court-ink: #ffffff;
+  --open: #d3eedd;
+  --open-strong: #2f9a63;
+  --danger: #b3261e;
+  --display: "Barlow Condensed", "Arial Narrow", system-ui, sans-serif;
+  --body: "Figtree", system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f1612; --surface: #17211b; --fg: #e5ede7; --muted: #95a59a;
+    --line: #26332b; --line-strong: #3d5045; --court: #3fa673; --court-ink: #06140c;
+    --open: #173a27; --open-strong: #4cc184; --danger: #f2867f; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0f1612; --surface: #17211b; --fg: #e5ede7; --muted: #95a59a;
+  --line: #26332b; --line-strong: #3d5045; --court: #3fa673; --court-ink: #06140c;
+  --open: #173a27; --open-strong: #4cc184; --danger: #f2867f; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--fg); font-family: var(--body); font-size: 15px; line-height: 1.45;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 20px 40px;
+}
+.wrap { max-width: 1120px; margin: 0 auto; display: grid; gap: 18px; }
+header { display: grid; gap: 4px; padding-bottom: 14px; border-bottom: 3px double var(--court); }
+h1 { font-family: var(--display); font-weight: 700; font-size: clamp(2rem, 5vw, 2.8rem); line-height: 1; margin: 0; letter-spacing: .01em; text-wrap: balance; }
+h1 span { color: var(--court); }
+.lede { margin: 0; color: var(--muted); max-width: 64ch; }
+h2 { font-family: var(--display); font-weight: 600; font-size: 1.25rem; letter-spacing: .04em; text-transform: uppercase; margin: 0; }
+.sync { font-size: 12.5px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+.sync i { width: 8px; height: 8px; border-radius: 50%; background: var(--line-strong); display: inline-block; }
+.sync.live i { background: var(--open-strong); }
+.sync.warn i { background: var(--danger); }
+
+button, input, select { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 2px solid var(--court); outline-offset: 2px; }
+.btn { border: 1px solid var(--line-strong); background: var(--surface); border-radius: 8px; padding: 6px 12px; font-size: 14px; font-weight: 500; }
+.btn:hover { border-color: var(--court); }
+.btn.primary { background: var(--court); color: var(--court-ink); border-color: var(--court); }
+.btn.danger { color: var(--danger); }
+.btn.danger.armed { background: var(--danger); color: var(--surface); border-color: var(--danger); }
+input[type=text], select { border: 1px solid var(--line-strong); background: var(--surface); border-radius: 8px; padding: 6px 10px; font-size: 14px; }
+
+/* Players */
+.players { display: grid; gap: 10px; }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.chip { display: inline-flex; align-items: center; gap: 8px; border: 1.5px solid var(--line); background: var(--surface); border-radius: 999px; padding: 4px 6px 4px 6px; font-weight: 500; font-size: 14px; }
+.chip.active { border-color: var(--fg); box-shadow: 0 0 0 1px var(--fg); }
+.chip.out { opacity: .5; }
+.chip .pick { border: 0; background: none; display: inline-flex; align-items: center; gap: 7px; padding: 2px 4px; }
+.dot { width: 14px; height: 14px; border-radius: 50%; flex: none; }
+.chip .count { border: 0; background: none; font-size: 12px; color: var(--muted); padding: 2px 8px; border-left: 1px solid var(--line); }
+.chip.out .count { text-decoration: line-through; }
+.add { display: flex; gap: 8px; flex-wrap: wrap; }
+.add input { flex: 1 1 160px; max-width: 240px; }
+.hint { font-size: 13px; color: var(--muted); margin: 0; }
+
+.tools { display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: center; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
+.tools .who { font-weight: 600; display: inline-flex; gap: 8px; align-items: center; }
+.tools .group { display: inline-flex; gap: 6px; align-items: center; flex-wrap: wrap; font-size: 14px; }
+.tools .grow { flex: 1; }
+
+/* Main */
+.main { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 18px; align-items: start; }
+@media (max-width: 860px) { .main { grid-template-columns: minmax(0, 1fr); } }
+
+.board { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 10px 10px 8px; min-width: 0; }
+.grid { display: grid; grid-template-columns: 52px repeat(7, minmax(0, 1fr)); user-select: none; -webkit-user-select: none; touch-action: none; }
+.grid.view { touch-action: auto; }
+.dh { font-family: var(--display); font-weight: 600; letter-spacing: .06em; text-transform: uppercase; text-align: center; font-size: 15px; padding: 2px 0 6px; }
+.dh.we { color: var(--court); }
+.tl { font-size: 11px; color: var(--muted); text-align: right; padding-right: 6px; line-height: 1; transform: translateY(-5px); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.c { height: 17px; border-left: 1px solid var(--line); border-top: 1px dotted var(--line); background-color: transparent; position: relative; }
+.c.hr { border-top: 1px solid var(--line-strong); }
+.c.last { border-right: 1px solid var(--line); }
+.c.end { border-bottom: 1px solid var(--line-strong); }
+.grid.showopen .c.free { background-color: var(--open); }
+.c.mine::after { content: ""; position: absolute; inset: 2px; border: 1.5px solid var(--surface); border-radius: 2px; opacity: .85; }
+.c.flash { animation: flash 1.4s ease-out; }
+@keyframes flash { 0%, 40% { box-shadow: inset 0 0 0 2px var(--open-strong); } 100% { box-shadow: none; } }
+@media (prefers-reduced-motion: reduce) { .c.flash { animation: none; box-shadow: inset 0 0 0 2px var(--open-strong); } }
+.status { min-height: 2.6em; font-size: 13px; color: var(--muted); padding: 8px 4px 0; font-variant-numeric: tabular-nums; }
+.status b { color: var(--fg); font-weight: 600; }
+
+/* Sidebar */
+aside { display: grid; gap: 14px; }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 14px; display: grid; gap: 12px; }
+.row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: 14px; }
+.slots { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+.slots li button { width: 100%; text-align: left; border: 0; background: none; padding: 7px 8px; border-radius: 8px; display: grid; grid-template-columns: 42px 1fr auto; gap: 8px; align-items: baseline; font-variant-numeric: tabular-nums; }
+.slots li button:hover { background: var(--open); }
+.slots .d { font-family: var(--display); font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--court); }
+.slots .len { font-size: 12.5px; color: var(--muted); }
+.empty { font-size: 14px; color: var(--muted); margin: 0; }
+.legend { display: grid; gap: 6px; font-size: 13px; color: var(--muted); }
+.legend div { display: flex; gap: 8px; align-items: center; }
+.sw { width: 22px; height: 14px; border: 1px solid var(--line-strong); border-radius: 3px; flex: none; }
+.notice { font-size: 13px; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line-strong); background: var(--surface); margin: 0; }
+</style>
+<style>
+.share { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
+.share .grow { flex: 1 1 200px; font-size: 13.5px; color: var(--muted); min-width: 0; }
+.share b { color: var(--fg); }
+.merge { display: flex; gap: 8px; flex-wrap: wrap; width: 100%; }
+.merge input { flex: 1 1 220px; min-width: 0; }
+.notice.ok { border-color: var(--open-strong); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Shuttle <span>Slots</span></h1>
+    <p class="lede">Everyone adds their name and drags across the week to block out when they're busy. Any square left blank is a time the whole group is free, so that's when to book a court.</p>
+  </header>
+
+  <div class="share">
+    <span class="grow"><b>How it saves:</b> your times are kept in this page's link. After you make changes, tap <b>Share with group</b> and post the link in your group chat. Always open the newest link from the chat.</span>
+    <button class="btn primary" id="shareBtn" type="button">Share with group</button>
+    <details class="merge" id="mergeBox">
+      <summary class="hint" style="cursor:pointer">Two people posted links at the same time? Combine them here</summary>
+      <form class="merge" id="mergeForm" style="margin-top:8px">
+        <input type="text" id="mergeInput" placeholder="Paste the other Shuttle Slots link" autocomplete="off" aria-label="Link to combine">
+        <button class="btn" type="submit">Combine</button>
+      </form>
+    </details>
+  </div>
+
+  <p class="notice" id="notice" hidden></p>
+
+  <section class="players">
+    <h2>Players</h2>
+    <div class="chips" id="chips"></div>
+    <form class="add" id="addForm">
+      <input type="text" id="newName" placeholder="Your name" maxlength="24" autocomplete="off" aria-label="New player name">
+      <button class="btn primary" type="submit">Add player</button>
+    </form>
+    <p class="hint">Tap your name to edit your busy times. Tap "counting" to leave someone out of this week's game.</p>
+  </section>
+
+  <div class="tools" id="tools" hidden>
+    <span class="who"><span class="dot" id="whoDot"></span><span>Editing <span id="whoName"></span></span></span>
+    <span class="group">
+      <label for="workFrom">Work hours</label>
+      <select id="workFrom"></select>
+      <span>to</span>
+      <select id="workTo"></select>
+      <button class="btn" id="workBtn" type="button">Block Mon–Fri</button>
+    </span>
+    <span class="grow"></span>
+    <button class="btn" id="clearBtn" type="button">Clear my week</button>
+    <button class="btn danger" id="removeBtn" type="button">Remove player</button>
+  </div>
+
+  <div class="main">
+    <div class="board">
+      <div class="grid showopen" id="grid" aria-label="Weekly availability grid"></div>
+      <div class="status" id="status">Drag on the grid to mark busy time. Start on a busy square to erase instead.</div>
+    </div>
+    <aside>
+      <div class="panel">
+        <h2>Open court times</h2>
+        <div class="row">
+          <label for="minLen">At least</label>
+          <select id="minLen">
+            <option value="2">1 hour</option>
+            <option value="3">1.5 hours</option>
+            <option value="4" selected>2 hours</option>
+            <option value="6">3 hours</option>
+          </select>
+        </div>
+        <ul class="slots" id="slots"></ul>
+      </div>
+      <div class="panel">
+        <div class="row"><input type="checkbox" id="showOpen" checked><label for="showOpen">Tint open squares green</label></div>
+        <div class="legend">
+          <div><span class="sw" style="background:var(--open)"></span>Everyone counted is free</div>
+          <div><span class="sw" style="background:linear-gradient(90deg,#e4572e 0 50%,#2e86de 50% 100%)"></span>Busy (one stripe per person)</div>
+        </div>
+      </div>
+    </aside>
+  </div>
+</div>
+
+<script>
+const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+const START = 7, ROWS = 34, N = 7 * ROWS; // 7:00 to 24:00 in half hours
+const COLORS = ["#e4572e", "#2e86de", "#f2a541", "#9b59b6", "#17a2b8", "#e84393", "#6c5ce7", "#a1887f", "#ff8a65", "#5c7cfa", "#d4a017", "#c2185b"];
+const LS = { state: "ss.state", active: "ss.active", out: "ss.out" };
+
+const $ = id => document.getElementById(id);
+const store = {
+  get(k, d) { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch { return d; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} }
+};
+
+// people includes removed players as tombstones ({removed: true}) so old links can't bring them back
+let people = [];            // {id, name, color (index), updated (sec), removed, busy: Uint8Array}
+let activeId = store.get(LS.active, null);
+let excluded = new Set(store.get(LS.out, []));
+let drag = null;            // {start, end, add}
+
+const now = () => Math.floor(Date.now() / 1000);
+const live = () => people.filter(p => !p.removed);
+const byId = id => live().find(p => p.id === id);
+const colorOf = p => COLORS[p.color % COLORS.length];
+const esc = s => String(s).replace(/[&<>"]/g, ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[ch]));
+
+function fmtTime(row) {
+  const mins = START * 60 + row * 30, h = Math.floor(mins / 60) % 24, m = mins % 60;
+  const ap = h < 12 ? "AM" : "PM", h12 = h % 12 === 0 ? 12 : h % 12;
+  return h12 + (m ? ":" + String(m).padStart(2, "0") : "") + " " + ap;
+}
+
+/* ---------- link encoding ----------
+   #v1.<person>.<person>…  each person = id~name~color~updated~bits (fields URI-encoded, bits base64url) */
+function bitsToB64(a) {
+  const bytes = new Uint8Array(Math.ceil(N / 8));
+  for (let i = 0; i < N; i++) if (a[i]) bytes[i >> 3] |= 1 << (i & 7);
+  let s = ""; bytes.forEach(b => s += String.fromCharCode(b));
+  return btoa(s).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+function b64ToBits(s) {
+  const a = new Uint8Array(N);
+  try {
+    const bin = atob(s.replace(/-/g, "+").replace(/_/g, "/"));
+    for (let i = 0; i < N; i++) if ((bin.charCodeAt(i >> 3) || 0) & (1 << (i & 7))) a[i] = 1;
+  } catch {}
+  return a;
+}
+function encodeState(list) {
+  return "v1." + list.map(p => [p.id, encodeURIComponent(p.name).replace(/[.~]/g, c => "%" + c.charCodeAt(0).toString(16).toUpperCase()), p.removed ? "x" : p.color, p.updated.toString(36), p.removed ? "" : bitsToB64(p.busy)].join("~")).join(".");
+}
+function decodeState(hash) {
+  const h = hash.replace(/^#/, "");
+  if (!h.startsWith("v1.")) return null;
+  const out = [];
+  for (const part of h.slice(3).split(".")) {
+    const f = part.split("~");
+    if (f.length !== 5 || !/^[a-z0-9]{1,12}$/.test(f[0])) continue;
+    let name; try { name = decodeURIComponent(f[1]).slice(0, 24); } catch { continue; }
+    const removed = f[2] === "x";
+    out.push({ id: f[0], name, color: removed ? 0 : (parseInt(f[2], 10) || 0), updated: parseInt(f[3], 36) || 0, removed, busy: removed ? new Uint8Array(N) : b64ToBits(f[4]) });
+  }
+  return out;
+}
+// newest version of each player wins
+function merge(a, b) {
+  const m = new Map(a.map(p => [p.id, p]));
+  for (const p of b) { const q = m.get(p.id); if (!q || p.updated > q.updated) m.set(p.id, p); }
+  return [...m.values()];
+}
+function shareUrl() { return location.href.split("#")[0] + "#" + encodeState(people); }
+function persist() {
+  store.set(LS.state, encodeState(people));
+  try { history.replaceState(null, "", "#" + encodeState(people)); } catch {}
+}
+function touch(p) { p.updated = Math.max(now(), p.updated + 1); persist(); }
+
+/* ---------- grid ---------- */
+const grid = $("grid");
+const cells = [];
+(function build() {
+  grid.appendChild(document.createElement("div"));
+  DAYS.forEach((d, i) => { const h = document.createElement("div"); h.className = "dh" + (i >= 5 ? " we" : ""); h.textContent = d; grid.appendChild(h); });
+  for (let r = 0; r < ROWS; r++) {
+    const t = document.createElement("div"); t.className = "tl"; t.textContent = r % 2 === 0 ? fmtTime(r) : ""; grid.appendChild(t);
+    for (let d = 0; d < 7; d++) {
+      const c = document.createElement("div"), i = d * ROWS + r;
+      c.className = "c" + (r % 2 === 0 ? " hr" : "") + (d === 6 ? " last" : "") + (r === ROWS - 1 ? " end" : "");
+      c.dataset.i = i; cells[i] = c; grid.appendChild(c);
+    }
+  }
+})();
+
+function inRect(i) {
+  if (!drag) return false;
+  const d = Math.floor(i / ROWS), r = i % ROWS;
+  const d1 = Math.floor(drag.start / ROWS), r1 = drag.start % ROWS, d2 = Math.floor(drag.end / ROWS), r2 = drag.end % ROWS;
+  return d >= Math.min(d1, d2) && d <= Math.max(d1, d2) && r >= Math.min(r1, r2) && r <= Math.max(r1, r2);
+}
+function busyAt(p, i) { return (drag && p.id === activeId && inRect(i)) ? drag.add : p.busy[i] === 1; }
+const counted = () => live().filter(p => !excluded.has(p.id));
+
+function paint() {
+  const cs = counted(), me = byId(activeId);
+  for (let i = 0; i < N; i++) {
+    const cols = [];
+    for (const p of cs) if (busyAt(p, i)) cols.push(colorOf(p));
+    const c = cells[i];
+    if (!cols.length) c.style.background = "";
+    else if (cols.length === 1) c.style.background = cols[0];
+    else c.style.background = "linear-gradient(90deg," + cols.map((k, j) => `${k} ${j * 100 / cols.length}% ${(j + 1) * 100 / cols.length}%`).join(",") + ")";
+    c.classList.toggle("free", !cols.length && cs.length > 0);
+    c.classList.toggle("mine", !!me && !excluded.has(me.id) && busyAt(me, i) && cols.length > 1);
+  }
+}
+
+function describe(i) {
+  const d = Math.floor(i / ROWS), r = i % ROWS;
+  const when = `<b>${DAYS[d]} ${fmtTime(r)}–${fmtTime(r + 1)}</b>`;
+  if (!live().length) return when;
+  const busy = counted().filter(p => busyAt(p, i)).map(p => esc(p.name));
+  const free = counted().filter(p => !busyAt(p, i)).map(p => esc(p.name));
+  return `${when} · Busy: ${busy.length ? busy.join(", ") : "nobody"} · Free: ${free.length ? free.join(", ") : "nobody"}`;
+}
+
+function cellFromPoint(x, y) {
+  const el = document.elementFromPoint(x, y);
+  return el && el.classList && el.classList.contains("c") ? +el.dataset.i : null;
+}
+grid.addEventListener("pointerdown", e => {
+  const i = cellFromPoint(e.clientX, e.clientY);
+  if (i == null) return;
+  $("status").innerHTML = describe(i);
+  const me = byId(activeId);
+  if (!me) return;
+  e.preventDefault();
+  drag = { start: i, end: i, add: me.busy[i] !== 1 };
+  grid.setPointerCapture(e.pointerId);
+  paint();
+});
+grid.addEventListener("pointermove", e => {
+  const i = cellFromPoint(e.clientX, e.clientY);
+  if (i == null) return;
+  if (drag && i !== drag.end) { drag.end = i; paint(); }
+  $("status").innerHTML = describe(i);
+});
+function endDrag() {
+  if (!drag) return;
+  const me = byId(activeId);
+  if (me) { for (let i = 0; i < N; i++) if (inRect(i)) me.busy[i] = drag.add ? 1 : 0; touch(me); }
+  drag = null;
+  paint(); renderSlots();
+}
+grid.addEventListener("pointerup", endDrag);
+grid.addEventListener("pointercancel", endDrag);
+
+/* ---------- open windows ---------- */
+function renderSlots() {
+  const ul = $("slots"); ul.innerHTML = "";
+  const cs = counted();
+  if (!cs.length) { ul.innerHTML = `<li><p class="empty">${live().length ? "Nobody is counted. Tap \"counting\" on a player to include them." : "Add players to see when everyone is free."}</p></li>`; return; }
+  const min = +$("minLen").value, found = [];
+  for (let d = 0; d < 7; d++) {
+    let run = -1;
+    for (let r = 0; r <= ROWS; r++) {
+      const free = r < ROWS && cs.every(p => p.busy[d * ROWS + r] !== 1);
+      if (free && run < 0) run = r;
+      if (!free && run >= 0) { if (r - run >= min) found.push({ d, a: run, b: r }); run = -1; }
+    }
+  }
+  if (!found.length) { ul.innerHTML = `<li><p class="empty">No shared gap that long this week. Try a shorter length, or stop counting someone.</p></li>`; return; }
+  for (const f of found) {
+    const li = document.createElement("li"), b = document.createElement("button");
+    b.type = "button";
+    b.innerHTML = `<span class="d">${DAYS[f.d]}</span><span>${fmtTime(f.a)} – ${f.b === ROWS ? "12 AM" : fmtTime(f.b)}</span><span class="len">${(f.b - f.a) / 2} h</span>`;
+    b.addEventListener("click", () => {
+      for (let r = f.a; r < f.b; r++) { const c = cells[f.d * ROWS + r]; c.classList.remove("flash"); void c.offsetWidth; c.classList.add("flash"); }
+      cells[f.d * ROWS + f.a].scrollIntoView({ block: "nearest", behavior: "smooth" });
+    });
+    li.appendChild(b); ul.appendChild(li);
+  }
+}
+$("minLen").addEventListener("change", renderSlots);
+$("showOpen").addEventListener("change", e => grid.classList.toggle("showopen", e.target.checked));
+
+/* ---------- players ---------- */
+function renderChips() {
+  const box = $("chips"); box.innerHTML = "";
+  if (!live().length) box.innerHTML = `<p class="empty">No players yet. Add your name below, then drag on the grid to block out your busy times.</p>`;
+  for (const p of live()) {
+    const chip = document.createElement("span");
+    chip.className = "chip" + (p.id === activeId ? " active" : "") + (excluded.has(p.id) ? " out" : "");
+    const pick = document.createElement("button");
+    pick.className = "pick"; pick.type = "button"; pick.setAttribute("aria-pressed", p.id === activeId);
+    pick.innerHTML = `<span class="dot" style="background:${colorOf(p)}"></span>`;
+    pick.append(p.name);
+    pick.addEventListener("click", () => { activeId = activeId === p.id ? null : p.id; store.set(LS.active, activeId); renderAll(); });
+    const cnt = document.createElement("button");
+    cnt.className = "count"; cnt.type = "button"; cnt.textContent = "counting";
+    cnt.title = excluded.has(p.id) ? "Not counted in open times" : "Counted in open times";
+    cnt.addEventListener("click", () => { excluded.has(p.id) ? excluded.delete(p.id) : excluded.add(p.id); store.set(LS.out, [...excluded]); renderAll(); });
+    chip.append(pick, cnt); box.appendChild(chip);
+  }
+  const me = byId(activeId);
+  $("tools").hidden = !me;
+  if (me) { $("whoDot").style.background = colorOf(me); $("whoName").textContent = me.name; }
+  grid.classList.toggle("view", !me);
+}
+function renderAll() { renderChips(); paint(); renderSlots(); }
+
+$("addForm").addEventListener("submit", e => {
+  e.preventDefault();
+  const name = $("newName").value.trim();
+  if (!name) return;
+  const used = new Set(live().map(p => p.color % COLORS.length));
+  let color = COLORS.findIndex((_, k) => !used.has(k)); if (color < 0) color = people.length % COLORS.length;
+  const id = Math.random().toString(36).slice(2, 8);
+  const p = { id, name, color, updated: now(), removed: false, busy: new Uint8Array(N) };
+  people.push(p); activeId = id; store.set(LS.active, id);
+  $("newName").value = "";
+  persist(); renderAll();
+});
+
+(function () {
+  const from = $("workFrom"), to = $("workTo");
+  for (let r = 0; r <= ROWS; r++) { from.add(new Option(fmtTime(r), r)); to.add(new Option(r === ROWS ? "12 AM" : fmtTime(r), r)); }
+  from.value = 4; to.value = 22; // 9 AM – 6 PM
+})();
+$("workBtn").addEventListener("click", () => {
+  const me = byId(activeId); if (!me) return;
+  const a = +$("workFrom").value, b = +$("workTo").value;
+  if (b <= a) { $("status").textContent = "Pick an end time later than the start time."; return; }
+  for (let d = 0; d < 5; d++) for (let r = a; r < b; r++) me.busy[d * ROWS + r] = 1;
+  touch(me); paint(); renderSlots();
+  $("status").textContent = `Blocked Mon–Fri ${fmtTime(a)}–${fmtTime(b)} for ${me.name}. Drag to adjust any day.`;
+});
+$("clearBtn").addEventListener("click", () => {
+  const me = byId(activeId); if (!me) return;
+  me.busy = new Uint8Array(N); touch(me); paint(); renderSlots();
+});
+let armTimer = null;
+$("removeBtn").addEventListener("click", () => {
+  const b = $("removeBtn"), me = byId(activeId); if (!me) return;
+  if (!b.classList.contains("armed")) {
+    b.classList.add("armed"); b.textContent = `Yes, remove ${me.name}`;
+    clearTimeout(armTimer); armTimer = setTimeout(disarm, 4000); return;
+  }
+  disarm();
+  me.removed = true; me.busy = new Uint8Array(N); touch(me);
+  activeId = null; store.set(LS.active, null);
+  renderAll();
+});
+function disarm() { const b = $("removeBtn"); b.classList.remove("armed"); b.textContent = "Remove player"; }
+
+/* ---------- sharing ---------- */
+function showNotice(t, ok) { const n = $("notice"); n.textContent = t; n.className = "notice" + (ok ? " ok" : ""); n.hidden = false; }
+$("shareBtn").addEventListener("click", async () => {
+  if (!live().length) { showNotice("Add at least one player before sharing."); return; }
+  const url = shareUrl();
+  const text = "Badminton: mark when you're busy, then tap Share with group and post the new link here.";
+  if (navigator.share) {
+    try { await navigator.share({ title: "Shuttle Slots", text, url }); return; }
+    catch (err) { if (err && err.name === "AbortError") return; }
+  }
+  try { await navigator.clipboard.writeText(url); showNotice("Link copied. Paste it in your group chat.", true); }
+  catch { showNotice("Copy this link and paste it in your group chat: " + url, true); }
+});
+$("mergeForm").addEventListener("submit", e => {
+  e.preventDefault();
+  const v = $("mergeInput").value.trim(), i = v.indexOf("#");
+  const other = i >= 0 ? decodeState(v.slice(i)) : null;
+  if (!other) { showNotice("That doesn't look like a Shuttle Slots link. Copy the whole link from the chat and try again."); return; }
+  people = merge(people, other); persist(); renderAll();
+  $("mergeInput").value = ""; $("mergeBox").open = false;
+  showNotice(`Combined. ${live().length} players now. Tap Share with group to post the combined link.`, true);
+});
+
+/* ---------- start ---------- */
+(function start() {
+  const saved = decodeState(store.get(LS.state, "") || "") || [];
+  const fromLink = decodeState(location.hash);
+  people = fromLink ? merge(saved, fromLink) : saved;
+  if (fromLink && live().length) showNotice(`Loaded the latest schedule: ${live().map(p => p.name).join(", ")}. Tap your name to add or change your times.`, true);
+  if (activeId && !byId(activeId)) activeId = null;
+  persist(); renderAll();
+})();
+window.addEventListener("hashchange", () => {
+  const fromLink = decodeState(location.hash);
+  if (fromLink) { people = merge(people, fromLink); store.set(LS.state, encodeState(people)); renderAll(); }
+});
+</script>
+</body>
+</html>

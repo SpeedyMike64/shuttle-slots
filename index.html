@@ -4,7 +4,19 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Shuttle Slots</title>
-<meta name="description" content="Find when your whole badminton group is free.">
+<meta name="description" content="Add your name, drag your free times, and book the time that works for everyone.">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Shuttle Slots">
+<meta property="og:title" content="Let's find a time to play! 🏸">
+<meta property="og:description" content="Add your name, drag your free times, and book the time that works for everyone.">
+<meta property="og:url" content="https://speedymike64.github.io/shuttle-slots/">
+<meta property="og:image" content="https://speedymike64.github.io/shuttle-slots/og/badminton.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Let's find a time to play! 🏸">
+<meta name="twitter:description" content="Add your name, drag your free times, and book the time that works for everyone.">
+<meta name="twitter:image" content="https://speedymike64.github.io/shuttle-slots/og/badminton.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Figtree:wght@400;500;600&display=swap">
 <style>
@@ -518,7 +530,8 @@ $("removeBtn").addEventListener("click", async () => {
 function disarm() { const b = $("removeBtn"); b.classList.remove("armed"); b.textContent = "Remove me"; }
 
 $("copyBtn").addEventListener("click", async () => {
-  const url = location.href.split("#")[0];
+  // groups with their own folder (tennis/, hangout/) share that link so chat previews show the right card
+  const url = ["tennis", "hangout"].includes(GROUP) ? location.origin + location.pathname.replace(/[^/]*$/, "") + GROUP + "/" : location.href.split("#")[0];
   try { await navigator.clipboard.writeText(url); showNotice("Link copied. Paste it in your group chat.", true); }
   catch { showNotice("Share this link in your group chat: " + url, true); }
 });

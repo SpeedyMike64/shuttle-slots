@@ -156,6 +156,17 @@ input[type=text], select { border: 1px solid var(--line-strong); background: var
 .c.last { border-right: 1px solid var(--line); }
 .c.end { border-bottom: 1px solid var(--line-strong); }
 .c.all { background-color: var(--open-strong); }
+.c.past { background: repeating-linear-gradient(135deg, var(--line) 0 2px, transparent 2px 7px) !important; opacity: .55; }
+.c.today { box-shadow: inset 2px 0 0 var(--pop); }
+.dh small { display: block; font-size: 20px; line-height: 1.05; letter-spacing: 0; color: var(--fg); }
+.dh.we small { color: var(--court); }
+.dh.today small { display: inline-grid; place-items: center; width: 32px; height: 32px; border-radius: 50%; background: var(--pop); color: var(--pop-ink); }
+.weeknav { display: flex; align-items: center; gap: 8px; margin-inline: 6px; flex-wrap: wrap; }
+.weeknav .label { font-family: var(--display); font-weight: 700; font-size: 1.25rem; letter-spacing: .02em; text-transform: uppercase; min-width: 0; flex: 1; text-align: center; }
+.weeknav .label small { display: block; font-family: var(--body); font-weight: 500; font-size: 12px; letter-spacing: 0; text-transform: none; color: var(--muted); }
+.navbtn { width: 40px; height: 40px; border-radius: 50%; border: 1px solid var(--line-strong); background: var(--surface); font-size: 20px; line-height: 1; display: grid; place-items: center; }
+.navbtn:hover { border-color: var(--court); }
+.chip .tag { font-size: 11px; color: var(--muted); font-weight: 500; }
 .c.mine::before { content: ""; position: absolute; inset: 1px; border: 2px solid var(--pc, var(--court)); border-radius: 3px; z-index: 1; }
 .c.flash { animation: flash 1.4s ease-out; }
 @keyframes flash { 0%, 40% { box-shadow: inset 0 0 0 3px var(--fg); } 100% { box-shadow: none; } }
@@ -245,17 +256,23 @@ h3 { font-size: 12px; font-weight: 600; letter-spacing: .06em; text-transform: u
       <button class="btn primary" type="submit">I'm in!</button>
     </form>
     <div class="chips" id="chips"></div>
-    <p class="hint">Already on the list? Just tap your name. Tap "counting" to leave someone out this week.</p>
+    <p class="hint">Already on the list? Just tap your name. Tap "counting" to leave someone out.</p>
   </section>
 
   <div class="main">
     <div class="card board">
       <h2 class="step"><b>2</b>Drag your free times</h2>
+      <div class="weeknav">
+        <button class="navbtn" id="prevWeek" type="button" aria-label="Previous week">‹</button>
+        <div class="label"><span id="weekLabel">This week</span><small id="weekSub"></small></div>
+        <button class="navbtn" id="nextWeek" type="button" aria-label="Next week">›</button>
+      </div>
       <p class="prompt" id="prompt">Tap your name in step 1 first, then drag across the times you can play.</p>
       <div class="tools" id="tools" hidden>
         <span class="who"><span class="dot" id="whoDot"></span><span>Editing <span id="whoName"></span></span></span>
         <span class="grow"></span>
-        <button class="btn" id="clearBtn" type="button">Clear my week</button>
+        <button class="btn" id="copyWeekBtn" type="button">Copy last week</button>
+        <button class="btn" id="clearBtn" type="button">Clear this week</button>
         <button class="btn danger" id="removeBtn" type="button">Remove me</button>
       </div>
       <div class="grid" id="grid" aria-label="Weekly free-time grid"></div>
@@ -289,7 +306,7 @@ h3 { font-size: 12px; font-weight: 600; letter-spacing: .06em; text-transform: u
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-import { getFirestore, collection, doc, setDoc, deleteDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { getFirestore, collection, doc, getDoc, setDoc, deleteDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyCbJKufltigW4_VpaS0bye82m45IiFi9iU",
@@ -301,6 +318,7 @@ const firebaseConfig = {
 };
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const START = 7, ROWS = 34, N = 7 * ROWS; // 7:00 to 24:00 in half hours
 const COLORS = ["#e4572e", "#2e86de", "#f2a541", "#9b59b6", "#17a2b8", "#e84393", "#6c5ce7", "#a1887f", "#ff8a65", "#5c7cfa", "#d4a017", "#c2185b"];
 const GROUP = window.SS_GROUP || "";
@@ -313,23 +331,33 @@ const store = {
   set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} }
 };
 
-let people = [];            // {id, name, color (index), created, free: Uint8Array}
+let people = [];            // {id, name, color (index), created}
+let marks = new Map();      // person id -> Uint8Array of free half hours for the week on screen
 let activeId = store.get(LS.active, null);
 let excluded = new Set(store.get(LS.out, []));
 let drag = null;            // {start, end, add}
-let col = null;
-const saving = new Map();   // id -> {inFlight, dirty}
+let db = null, unsubMarks = null;
+const saving = new Map();   // "<week>/<id>" -> {inFlight, dirty, data}
 
 const byId = id => people.find(p => p.id === id);
 const colorOf = p => COLORS[p.color % COLORS.length];
 const esc = s => String(s).replace(/[&<>"]/g, ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[ch]));
 const encode = a => Array.from(a, v => v ? "1" : "0").join("");
-// Stored as the "busy" field with mode "free". Older entries without a mode marked busy times, so flip those.
-function decode(s, mode) {
-  const a = new Uint8Array(N), flip = mode !== "free";
-  for (let i = 0; i < N; i++) a[i] = ((typeof s === "string" && s[i] === "1") !== flip) ? 1 : 0;
-  return a;
-}
+const decode = s => { const a = new Uint8Array(N); if (typeof s === "string") for (let i = 0; i < N; i++) a[i] = s[i] === "1" ? 1 : 0; return a; };
+
+/* ---------- weeks ---------- */
+// A week is named by its Monday, e.g. "2026-10-26"; times are the viewer's local time
+function mondayOf(d) { const m = new Date(d.getFullYear(), d.getMonth(), d.getDate()); m.setDate(m.getDate() - ((m.getDay() + 6) % 7)); return m; }
+const addDays = (d, n) => new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
+const weekId = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+const thisMonday = mondayOf(new Date());
+let week = thisMonday;
+const dayDate = d => addDays(week, d);
+const fmtDate = dt => `${dt.getDate()} ${MONTHS[dt.getMonth()]}`;
+function cellStart(i) { const d = Math.floor(i / ROWS), r = i % ROWS, dt = dayDate(d); return new Date(dt.getFullYear(), dt.getMonth(), dt.getDate(), START, r * 30); }
+const isPast = i => cellStart(i).getTime() + 30 * 60000 <= Date.now();
+const marksOf = p => marks.get(p.id) || new Uint8Array(N);
+const filled = p => marks.has(p.id) && marks.get(p.id).some(v => v);
 
 function fmtTime(row) {
   if (row === ROWS) return "12 AM";
@@ -340,10 +368,10 @@ function fmtTime(row) {
 
 /* ---------- grid ---------- */
 const grid = $("grid");
-const cells = [];
+const cells = [], heads = [];
 (function build() {
   grid.appendChild(document.createElement("div"));
-  DAYS.forEach((d, i) => { const h = document.createElement("div"); h.className = "dh" + (i >= 5 ? " we" : ""); h.textContent = d; grid.appendChild(h); });
+  DAYS.forEach((d, i) => { const h = document.createElement("div"); h.className = "dh" + (i >= 5 ? " we" : ""); grid.appendChild(h); heads.push(h); });
   for (let r = 0; r < ROWS; r++) {
     const t = document.createElement("div"); t.className = "tl"; t.textContent = r % 2 === 0 ? fmtTime(r) : ""; grid.appendChild(t);
     for (let d = 0; d < 7; d++) {
@@ -354,33 +382,50 @@ const cells = [];
   }
 })();
 
+function renderWeek() {
+  const end = addDays(week, 6), today = weekId(new Date());
+  const span = week.getMonth() === end.getMonth() ? `${week.getDate()} – ${fmtDate(end)}` : `${fmtDate(week)} – ${fmtDate(end)}`;
+  const diff = Math.round((week - thisMonday) / (7 * 86400000));
+  $("weekLabel").textContent = span;
+  $("weekSub").textContent = diff === 0 ? "This week" : diff === 1 ? "Next week" : diff === -1 ? "Last week" : diff > 0 ? `In ${diff} weeks` : `${-diff} weeks ago`;
+  heads.forEach((h, d) => {
+    const dt = dayDate(d);
+    h.innerHTML = `${DAYS[d]}<small>${dt.getDate()}</small>`;
+    h.classList.toggle("today", weekId(dt) === today);
+  });
+  for (let i = 0; i < N; i++) cells[i].classList.toggle("today", weekId(dayDate(Math.floor(i / ROWS))) === today && !isPast(i));
+}
+
 function inRect(i) {
   if (!drag) return false;
   const d = Math.floor(i / ROWS), r = i % ROWS;
   const d1 = Math.floor(drag.start / ROWS), r1 = drag.start % ROWS, d2 = Math.floor(drag.end / ROWS), r2 = drag.end % ROWS;
   return d >= Math.min(d1, d2) && d <= Math.max(d1, d2) && r >= Math.min(r1, r2) && r <= Math.max(r1, r2);
 }
-function freeAt(p, i) { return (drag && p.id === activeId && inRect(i)) ? drag.add : p.free[i] === 1; }
+function freeAt(p, i) { return (drag && p.id === activeId && inRect(i) && !isPast(i)) ? drag.add : marksOf(p)[i] === 1; }
 const counted = () => people.filter(p => !excluded.has(p.id));
 
 function paint() {
   const cs = counted(), me = byId(activeId);
   for (let i = 0; i < N; i++) {
+    const c = cells[i], past = isPast(i);
+    c.classList.toggle("past", past);
     const cols = [];
     for (const p of cs) if (freeAt(p, i)) cols.push(colorOf(p));
-    const c = cells[i], all = cs.length > 0 && cols.length === cs.length;
-    if (all || !cols.length) c.style.background = "";
+    const all = !past && cs.length > 0 && cols.length === cs.length;
+    if (past || all || !cols.length) c.style.background = "";
     else if (cols.length === 1) c.style.background = cols[0];
     else c.style.background = "linear-gradient(90deg," + cols.map((k, j) => `${k} ${j * 100 / cols.length}% ${(j + 1) * 100 / cols.length}%`).join(",") + ")";
     c.classList.toggle("all", all);
-    c.classList.toggle("mine", !!me && freeAt(me, i));
+    c.classList.toggle("mine", !past && !!me && freeAt(me, i));
   }
   if (me) grid.style.setProperty("--pc", colorOf(me));
 }
 
 function describe(i) {
   const d = Math.floor(i / ROWS), r = i % ROWS;
-  const when = `<b>${DAYS[d]} ${fmtTime(r)}–${fmtTime(r + 1)}</b>`;
+  const when = `<b>${DAYS[d]} ${fmtDate(dayDate(d))}, ${fmtTime(r)}–${fmtTime(r + 1)}</b>`;
+  if (isPast(i)) return when + " · already passed";
   if (!people.length) return when;
   const free = counted().filter(p => freeAt(p, i)).map(p => esc(p.name));
   const not = counted().filter(p => !freeAt(p, i)).map(p => esc(p.name));
@@ -396,9 +441,9 @@ grid.addEventListener("pointerdown", e => {
   if (i == null) return;
   $("status").innerHTML = describe(i);
   const me = byId(activeId);
-  if (!me) return;
+  if (!me || isPast(i)) return;
   e.preventDefault();
-  drag = { start: i, end: i, add: me.free[i] !== 1 };
+  drag = { start: i, end: i, add: marksOf(me)[i] !== 1 };
   grid.setPointerCapture(e.pointerId);
   paint();
 });
@@ -411,22 +456,26 @@ grid.addEventListener("pointermove", e => {
 function endDrag() {
   if (!drag) return;
   const me = byId(activeId);
-  if (me) for (let i = 0; i < N; i++) if (inRect(i)) me.free[i] = drag.add ? 1 : 0;
+  if (me) {
+    const m = new Uint8Array(marksOf(me));
+    for (let i = 0; i < N; i++) if (inRect(i) && !isPast(i)) m[i] = drag.add ? 1 : 0;
+    marks.set(me.id, m);
+  }
   drag = null;
-  paint(); renderSlots();
-  if (me) save(me);
+  renderAll();
+  if (me) saveMarks(me);
 }
 grid.addEventListener("pointerup", endDrag);
 grid.addEventListener("pointercancel", endDrag);
 
 /* ---------- court times ---------- */
-// runs of at least `min` half hours on each day where `ok(cellIndex)` holds
+// runs of at least `min` half hours on each day where `ok(cellIndex)` holds, skipping times already passed
 function runs(ok, min) {
   const out = [];
   for (let d = 0; d < 7; d++) {
     let start = -1;
     for (let r = 0; r <= ROWS; r++) {
-      const yes = r < ROWS && ok(d * ROWS + r);
+      const i = d * ROWS + r, yes = r < ROWS && !isPast(i) && ok(i);
       if (yes && start < 0) start = r;
       if (!yes && start >= 0) { if (r - start >= min) out.push({ d, a: start, b: r }); start = -1; }
     }
@@ -438,7 +487,7 @@ function slotList(items) {
   for (const f of items) {
     const li = document.createElement("li"), b = document.createElement("button");
     b.type = "button";
-    b.innerHTML = `<span class="d">${DAYS[f.d]}</span><span>${fmtTime(f.a)} – ${fmtTime(f.b)}</span><span class="len">${(f.b - f.a) / 2} h</span>` + (f.note ? `<span class="who">${esc(f.note)}</span>` : "");
+    b.innerHTML = `<span class="d">${DAYS[f.d]}</span><span>${fmtDate(dayDate(f.d))} · ${fmtTime(f.a)} – ${fmtTime(f.b)}</span><span class="len">${(f.b - f.a) / 2} h</span>` + (f.note ? `<span class="who">${esc(f.note)}</span>` : "");
     b.addEventListener("click", () => {
       for (let r = f.a; r < f.b; r++) { const c = cells[f.d * ROWS + r]; c.classList.remove("flash"); void c.offsetWidth; c.classList.add("flash"); }
       cells[f.d * ROWS + f.a].scrollIntoView({ block: "nearest", behavior: "smooth" });
@@ -447,20 +496,23 @@ function slotList(items) {
   }
   return ul;
 }
+function note(text) { const p = document.createElement("p"); p.className = "empty"; p.textContent = text; return p; }
 function renderSlots() {
   const box = $("slots"); box.innerHTML = "";
   const cs = counted(), min = +$("minLen").value;
-  if (!cs.length) { box.innerHTML = `<p class="empty">${people.length ? "Nobody is counted. Tap \"counting\" on a player to include them." : "Add players to see when everyone is free."}</p>`; return; }
-  const everyone = runs(i => cs.every(p => p.free[i] === 1), min);
-  const h = document.createElement("h3"); h.textContent = cs.length > 1 ? "Everyone can play" : `${cs[0].name} can play`; box.appendChild(h);
+  if (!cs.length) { box.appendChild(note(people.length ? "Nobody is counted. Tap \"counting\" on a player to include them." : "Add players to see when everyone is free.")); return; }
+  const waiting = cs.filter(p => !filled(p)).map(p => p.name);
+  const free = p => i => marksOf(p)[i] === 1;
+  const everyone = runs(i => cs.every(p => free(p)(i)), min);
+  const h = document.createElement("h3"); h.textContent = cs.length > 1 ? "Everyone can make it" : `${cs[0].name} can make it`; box.appendChild(h);
   if (everyone.length) box.appendChild(slotList(everyone));
-  else { const p = document.createElement("p"); p.className = "empty"; p.textContent = "No time that long works for everyone yet. Try a shorter length, or ask people to add more free times."; box.appendChild(p); }
+  else box.appendChild(note(waiting.length ? `Waiting on ${waiting.join(", ")} to add times for ${$("weekLabel").textContent}.` : "No time that long works for everyone these dates. Try a shorter length, or check the next week."));
   // close calls: everyone except one person, for groups of three or more
   if (cs.length >= 3) {
     const almost = [];
     for (const q of cs) {
       const others = cs.filter(p => p !== q);
-      for (const f of runs(i => others.every(p => p.free[i] === 1) && q.free[i] !== 1, min)) almost.push({ ...f, note: `Everyone except ${q.name}` });
+      for (const f of runs(i => others.every(p => free(p)(i)) && !free(q)(i), min)) almost.push({ ...f, note: `Everyone except ${q.name}` });
     }
     if (almost.length) {
       almost.sort((x, y) => x.d - y.d || x.a - y.a);
@@ -482,6 +534,7 @@ function renderChips() {
     pick.className = "pick"; pick.type = "button"; pick.setAttribute("aria-pressed", p.id === activeId);
     pick.innerHTML = `<span class="dot" style="background:${colorOf(p)}"></span>`;
     pick.append(p.name);
+    if (!filled(p)) { const t = document.createElement("span"); t.className = "tag"; t.textContent = "not filled in"; pick.append(t); }
     pick.addEventListener("click", () => { activeId = activeId === p.id ? null : p.id; store.set(LS.active, activeId); renderAll(); });
     const cnt = document.createElement("button");
     cnt.className = "count"; cnt.type = "button"; cnt.textContent = "counting";
@@ -495,25 +548,46 @@ function renderChips() {
   if (me) { $("whoDot").style.background = colorOf(me); $("whoName").textContent = me.name; }
   grid.classList.toggle("view", !me);
 }
-function renderAll() { renderChips(); paint(); renderSlots(); }
+function renderAll() { renderWeek(); renderChips(); paint(); renderSlots(); }
 
-$("addForm").addEventListener("submit", e => {
+/* ---------- data paths ---------- */
+// badminton: people/<id> and weeks/<monday>/marks/<id>; other groups live under groups/<name>/...
+const base = () => GROUP ? ["groups", GROUP] : [];
+const peopleCol = () => collection(db, ...base(), "people");
+const marksCol = w => collection(db, ...base(), "weeks", weekId(w), "marks");
+
+$("addForm").addEventListener("submit", async e => {
   e.preventDefault();
   const name = $("newName").value.trim().slice(0, 24);
-  if (!name || !col) return;
+  if (!name || !db) return;
   const used = new Set(people.map(p => p.color % COLORS.length));
   let color = COLORS.findIndex((_, k) => !used.has(k)); if (color < 0) color = people.length % COLORS.length;
   const id = "p" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-  const p = { id, name, color, created: Date.now(), free: new Uint8Array(N) };
+  const p = { id, name, color, created: Date.now() };
   people.push(p); activeId = id; store.set(LS.active, id);
   $("newName").value = "";
   renderAll();
-  save(p);
+  try { await setDoc(doc(peopleCol(), id), { name, color, created: p.created }); setSync("live", "Saved"); }
+  catch (err) { saveFailed(err); }
 });
 
 $("clearBtn").addEventListener("click", () => {
   const me = byId(activeId); if (!me) return;
-  me.free = new Uint8Array(N); paint(); renderSlots(); save(me);
+  const m = new Uint8Array(marksOf(me));
+  for (let i = 0; i < N; i++) if (!isPast(i)) m[i] = 0;
+  marks.set(me.id, m); renderAll(); saveMarks(me);
+});
+$("copyWeekBtn").addEventListener("click", async () => {
+  const me = byId(activeId); if (!me || !db) return;
+  try {
+    const snap = await getDoc(doc(marksCol(addDays(week, -7)), me.id));
+    const last = snap.exists() ? decode(snap.data().free) : null;
+    if (!last || !last.some(v => v)) { $("status").textContent = `${me.name} has no times saved for last week to copy.`; return; }
+    const m = new Uint8Array(marksOf(me));
+    for (let i = 0; i < N; i++) if (!isPast(i) && last[i]) m[i] = 1;
+    marks.set(me.id, m); renderAll(); saveMarks(me);
+    $("status").textContent = `Added ${me.name}'s times from last week. Drag to change anything.`;
+  } catch (err) { saveFailed(err); }
 });
 let armTimer = null;
 $("removeBtn").addEventListener("click", async () => {
@@ -525,7 +599,7 @@ $("removeBtn").addEventListener("click", async () => {
   disarm();
   people = people.filter(p => p.id !== me.id); activeId = null; store.set(LS.active, null);
   renderAll();
-  try { await deleteDoc(doc(col, me.id)); } catch (err) { saveFailed(err); }
+  try { await deleteDoc(doc(peopleCol(), me.id)); await deleteDoc(doc(marksCol(week), me.id)); } catch (err) { saveFailed(err); }
 });
 function disarm() { const b = $("removeBtn"); b.classList.remove("armed"); b.textContent = "Remove me"; }
 
@@ -536,22 +610,25 @@ $("copyBtn").addEventListener("click", async () => {
   catch { showNotice("Share this link in your group chat: " + url, true); }
 });
 
+$("prevWeek").addEventListener("click", () => goWeek(-1));
+$("nextWeek").addEventListener("click", () => goWeek(1));
+function goWeek(n) { week = addDays(week, 7 * n); marks = new Map(); renderAll(); watchMarks(); }
+
 /* ---------- saving ---------- */
 function showNotice(t, ok) { const n = $("notice"); n.textContent = t; n.className = "notice" + (ok ? " ok" : ""); n.hidden = false; }
 function setSync(cls, text) { const s = $("sync"); s.className = "sync " + cls; s.querySelector("span").textContent = text; }
 
-async function save(p) {
-  const s = saving.get(p.id) || { inFlight: false, dirty: false };
-  saving.set(p.id, s);
+// one write at a time per person per week; a newer edit made mid-save is sent right after
+async function saveMarks(p) {
+  const key = weekId(week) + "/" + p.id, ref = doc(marksCol(week), p.id);
+  const s = saving.get(key) || { inFlight: false, dirty: false };
+  s.data = encode(marksOf(p));
+  saving.set(key, s);
   if (s.inFlight) { s.dirty = true; return; }
   s.inFlight = true;
   setSync("", "Saving…");
   try {
-    do {
-      s.dirty = false;
-      const cur = byId(p.id); if (!cur) break;
-      await setDoc(doc(col, p.id), { name: cur.name, color: cur.color, created: cur.created, mode: "free", busy: encode(cur.free) });
-    } while (s.dirty);
+    do { s.dirty = false; await setDoc(ref, { free: s.data }); } while (s.dirty);
     setSync("live", "Saved");
   } catch (err) { saveFailed(err); }
   finally { s.inFlight = false; }
@@ -562,35 +639,43 @@ function saveFailed(err) {
   showNotice("That change didn't save. Check your internet connection, then try again.");
 }
 
+function watchMarks() {
+  if (!db) return;
+  if (unsubMarks) unsubMarks();
+  const w = week, wid = weekId(w);
+  unsubMarks = onSnapshot(marksCol(w), snap => {
+    if (weekId(week) !== wid) return;
+    const next = new Map();
+    for (const d of snap.docs) next.set(d.id, decode(d.data().free));
+    // keep this device's edits that are still saving
+    for (const [key, s] of saving) if ((s.inFlight || s.dirty) && key.startsWith(wid + "/")) next.set(key.slice(wid.length + 1), decode(s.data));
+    marks = next;
+    if (!drag) renderAll();
+  }, loadFailed);
+}
+function loadFailed(err) {
+  console.error(err);
+  setSync("warn", "Can't reach the schedule");
+  showNotice("The schedule couldn't load. Check your internet connection and reload the page.");
+}
+
 /* ---------- start ---------- */
 renderAll();
 try {
-  const app = initializeApp(firebaseConfig);
-  // the badminton crew keeps the original list; other groups live under groups/<name>/people
-  col = GROUP ? collection(getFirestore(app), "groups", GROUP, "people") : collection(getFirestore(app), "people");
-  onSnapshot(col, snap => {
-    const incoming = snap.docs.map(d => {
+  db = getFirestore(initializeApp(firebaseConfig));
+  onSnapshot(peopleCol(), snap => {
+    people = snap.docs.map(d => {
       const v = d.data();
-      return { id: d.id, name: String(v.name || "Player").slice(0, 24), color: Number.isInteger(v.color) ? v.color : 0, created: +v.created || 0, free: decode(v.busy, v.mode) };
+      return { id: d.id, name: String(v.name || "Player").slice(0, 24), color: Number.isInteger(v.color) ? v.color : 0, created: +v.created || 0 };
     }).sort((a, b) => a.created - b.created);
-    // keep this device's edits that are still saving
-    for (const p of incoming) {
-      const s = saving.get(p.id), local = byId(p.id);
-      if (local && s && (s.inFlight || s.dirty)) p.free = local.free;
-    }
-    people = incoming;
     if (activeId && !byId(activeId)) activeId = null;
     if (!snap.metadata.hasPendingWrites) setSync("live", "Live: everyone sees the same grid");
     if (!drag) renderAll();
-  }, err => {
-    console.error(err);
-    setSync("warn", "Can't reach the schedule");
-    showNotice("The schedule couldn't load. Check your internet connection and reload the page.");
-  });
-} catch (err) {
-  console.error(err);
-  setSync("warn", "Can't reach the schedule");
-}
+  }, loadFailed);
+  watchMarks();
+} catch (err) { loadFailed(err); }
+// past times grey out as the day goes on
+setInterval(() => { if (!drag) renderAll(); }, 5 * 60000);
 </script>
 </body>
 </html>

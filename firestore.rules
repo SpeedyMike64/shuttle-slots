@@ -1,22 +1,23 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // One document per player: name, color, created time, a 238-character grid of marks,
-    // and an optional mode ('free' means the marks are times they can play)
+    // A player: name, color and when they joined. Older entries also carry a busy/mode grid, now unused.
     function validPlayer(id) {
+      let d = request.resource.data;
       return id.size() <= 20
-        && request.resource.data.keys().hasOnly(['name', 'color', 'created', 'busy', 'mode'])
-        && request.resource.data.name is string
-        && request.resource.data.name.size() > 0
-        && request.resource.data.name.size() <= 24
-        && request.resource.data.color is int
-        && request.resource.data.color >= 0
-        && request.resource.data.color < 12
-        && request.resource.data.created is int
-        && request.resource.data.busy is string
-        && request.resource.data.busy.size() == 238
-        && request.resource.data.busy.matches('^[01]+$')
-        && (!('mode' in request.resource.data) || request.resource.data.mode in ['busy', 'free']);
+        && d.keys().hasOnly(['name', 'color', 'created', 'busy', 'mode'])
+        && d.name is string && d.name.size() > 0 && d.name.size() <= 24
+        && d.color is int && d.color >= 0 && d.color < 12
+        && d.created is int
+        && (!('busy' in d) || (d.busy is string && d.busy.size() == 238 && d.busy.matches('^[01]+$')))
+        && (!('mode' in d) || d.mode in ['busy', 'free']);
+    }
+    // One player's free half hours for one week (named by its Monday): 238 characters of 0/1
+    function validMarks(week, id) {
+      let d = request.resource.data;
+      return week.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$') && id.size() <= 20
+        && d.keys().hasOnly(['free'])
+        && d.free is string && d.free.size() == 238 && d.free.matches('^[01]+$');
     }
     // The original badminton group
     match /people/{id} {
@@ -24,11 +25,21 @@ service cloud.firestore {
       allow delete: if id.size() <= 20;
       allow create, update: if validPlayer(id);
     }
-    // Every other friend group: /groups/<group name>/people/<player>
+    match /weeks/{week}/marks/{id} {
+      allow read: if true;
+      allow delete: if id.size() <= 20;
+      allow create, update: if validMarks(week, id);
+    }
+    // Every other friend group: /groups/<group name>/...
     match /groups/{group}/people/{id} {
       allow read: if group.size() <= 30;
       allow delete: if group.size() <= 30 && id.size() <= 20;
       allow create, update: if group.size() <= 30 && validPlayer(id);
+    }
+    match /groups/{group}/weeks/{week}/marks/{id} {
+      allow read: if group.size() <= 30;
+      allow delete: if group.size() <= 30 && id.size() <= 20;
+      allow create, update: if group.size() <= 30 && validMarks(week, id);
     }
     match /{document=**} {
       allow read, write: if false;

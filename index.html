@@ -231,6 +231,10 @@ h3 { font-size: 12px; font-weight: 600; letter-spacing: .06em; text-transform: u
       var g = (new URLSearchParams(location.search).get("group") || "").toLowerCase().replace(/[^a-z0-9-]/g, "").slice(0, 30);
       window.SS_GROUP = g;
       if (!g) return;
+      // groups with their own folder keep that short link in the address bar, so a copied link shows the right chat preview
+      if (["tennis", "hangout"].indexOf(g) >= 0) {
+        try { history.replaceState(null, "", location.pathname.replace(/[^/]*$/, "") + g + "/" + location.hash); } catch (e) {}
+      }
       var name = g.replace(/-/g, " ").replace(/\b\w/g, function (c) { return c.toUpperCase(); });
       var tennis = /tennis/.test(g);
       window.SS_THEME = tennis ? "tennis" : "hang";

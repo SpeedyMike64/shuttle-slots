@@ -67,7 +67,7 @@ h1 span { color: var(--pop); display: inline-block; }
 @keyframes serve { from { transform: translate(-60vw, 60px) rotate(-70deg); opacity: 0; } to { transform: rotate(-28deg); opacity: 1; } }
 @keyframes hover { 50% { transform: translateY(-8px) rotate(-22deg); } }
 @media (prefers-reduced-motion: reduce) { .shuttle { animation: none; } }
-@media (max-width: 520px) { .shuttle, .hang-art { opacity: .55; } }
+@media (max-width: 520px) { .shuttle, .hang-art { opacity: .55; } .ball-art { opacity: .9; } }
 .hang-art { display: none; }
 /* Hangouts: a relaxed look for any other friend group, with soft dots and two chat bubbles */
 .hero.hang { --hero: #3d3a8c; }
@@ -76,6 +76,18 @@ h1 span { color: var(--pop); display: inline-block; }
 .hero.hang .hang-art { display: block; position: absolute; right: clamp(8px, 4vw, 44px); top: 16px; width: clamp(84px, 22vw, 150px); z-index: -1; animation: pop 0.9s cubic-bezier(.2, .9, .3, 1.3) both, hover 4s 0.9s ease-in-out infinite; }
 @keyframes pop { from { transform: scale(.4); opacity: 0; } to { transform: none; opacity: 1; } }
 @media (prefers-reduced-motion: reduce) { .hero.hang .hang-art { animation: none; } }
+.ball-art { display: none; }
+/* Tennis: a blue hard court from above (net down the middle, service boxes either side) and a ball */
+.hero.tennis { --hero: #22579e; }
+.hero.tennis .court { background:
+    linear-gradient(var(--hero-line), var(--hero-line)) 50% 50% / 54% 2px no-repeat,
+    linear-gradient(90deg, transparent calc(50% - 1.5px), rgba(255, 255, 255, .5) calc(50% - 1.5px) calc(50% + 1.5px), transparent calc(50% + 1.5px)),
+    linear-gradient(0deg, transparent 12%, var(--hero-line) 12% calc(12% + 2px), transparent calc(12% + 2px) calc(88% - 2px), var(--hero-line) calc(88% - 2px) 88%, transparent 88%),
+    linear-gradient(90deg, transparent 23%, var(--hero-line) 23% calc(23% + 2px), transparent calc(23% + 2px) calc(77% - 2px), var(--hero-line) calc(77% - 2px) 77%, transparent 77%); }
+.hero.tennis .shuttle { display: none; }
+.hero.tennis .ball-art { display: block; position: absolute; right: clamp(12px, 5vw, 52px); top: 18px; width: clamp(64px, 17vw, 112px); z-index: -1; animation: bounce 1.1s cubic-bezier(.3, .7, .4, 1) both, hover 4s 1.1s ease-in-out infinite; }
+@keyframes bounce { 0% { transform: translate(-50vw, -40px) rotate(-200deg); opacity: 0; } 60% { transform: translate(0, 24px) rotate(-20deg); opacity: 1; } 100% { transform: none; } }
+@media (prefers-reduced-motion: reduce) { .hero.tennis .ball-art { animation: none; } }
 h2 { font-family: var(--display); font-weight: 600; font-size: 1.25rem; letter-spacing: .04em; text-transform: uppercase; margin: 0; }
 .sync { font-size: 12.5px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
 .sync i { width: 8px; height: 8px; border-radius: 50%; background: var(--line-strong); display: inline-block; }
@@ -172,6 +184,10 @@ h3 { font-size: 12px; font-weight: 600; letter-spacing: .06em; text-transform: u
       <rect x="35" y="92" width="30" height="10" rx="3" fill="#ffd23f"/>
       <path d="M35 102 h30 v8 a15 15 0 0 1 -30 0 Z" fill="#ffd23f"/>
     </svg>
+    <svg class="ball-art" viewBox="0 0 100 100" aria-hidden="true">
+      <circle cx="50" cy="50" r="46" fill="#d8f052"/>
+      <path d="M18 18 C40 34 40 66 18 82 M82 18 C60 34 60 66 82 82" stroke="#ffffff" stroke-width="5" fill="none" stroke-linecap="round"/>
+    </svg>
     <svg class="hang-art" viewBox="0 0 150 120" aria-hidden="true">
       <path d="M14 10 h78 a12 12 0 0 1 12 12 v34 a12 12 0 0 1 -12 12 h-46 l-18 16 v-16 h-14 a12 12 0 0 1 -12 -12 v-34 a12 12 0 0 1 12 -12 Z" fill="#ffffff"/>
       <g fill="#3d3a8c"><circle cx="34" cy="39" r="6"/><circle cx="53" cy="39" r="6"/><circle cx="72" cy="39" r="6"/></g>
@@ -193,11 +209,14 @@ h3 { font-size: 12px; font-weight: 600; letter-spacing: .06em; text-transform: u
       window.SS_GROUP = g;
       if (!g) return;
       var name = g.replace(/-/g, " ").replace(/\b\w/g, function (c) { return c.toUpperCase(); });
-      document.querySelector(".hero").classList.add("hang");
+      var tennis = /tennis/.test(g);
+      window.SS_THEME = tennis ? "tennis" : "hang";
+      document.querySelector(".hero").classList.add(window.SS_THEME);
       document.getElementById("brand").textContent = name;
+      document.title = name;
+      if (tennis) return; // keeps "play!" and "Green = book it"
       document.getElementById("headline").innerHTML = "Let's find a time to <span>hang!</span>";
       document.getElementById("step3").textContent = "Green = let's hang";
-      document.title = name;
     })();
   </script>
 
@@ -276,7 +295,7 @@ const GROUP = window.SS_GROUP || "";
 const LS = GROUP ? { active: "ss.active." + GROUP, out: "ss.out." + GROUP } : { active: "ss.active", out: "ss.out" };
 
 const $ = id => document.getElementById(id);
-if (GROUP) $("step3h").textContent = "Pick the green";
+if (window.SS_THEME === "hang") $("step3h").textContent = "Pick the green";
 const store = {
   get(k, d) { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch { return d; } },
   set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} }
